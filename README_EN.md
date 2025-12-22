@@ -2,6 +2,8 @@
 
 A powerful and customizable MIDI music visualizer that turns your music into art.
 
+![MidiArt Pro Running on macOS](images/run_in_macos.png)
+
 ## Upstream Repository
 
 This project is a macOS version based on [Aclameta/MidiArt-Pro](https://github.com/Aclameta/MidiArt-Pro).

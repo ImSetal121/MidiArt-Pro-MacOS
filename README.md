@@ -2,6 +2,8 @@
 
 一个强大且可定制的MIDI音乐可视化工具，将你的音乐变成艺术。
 
+![MidiArt Pro 运行截图](images/run_in_macos.png)
+
 ## 上游仓库
 
 本项目基于 [Aclameta/MidiArt-Pro](https://github.com/Aclameta/MidiArt-Pro) 的 macOS 版本。
