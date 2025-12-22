@@ -31,6 +31,11 @@ This project is a macOS version based on [Aclameta/MidiArt-Pro](https://github.c
 - First run: If you see a security warning, right-click the app and select "Open", then click "Open" in the dialog
 - The app is unsigned, so you may need to allow it in System Settings > Privacy & Security
 
+**Audio Format Recommendation:**
+- **MP3 format** is recommended for audio files
+- **WAV format** currently has compatibility issues and may cause rendering failures
+- WAV format support will be fixed in future versions
+
 ### Run from Source
 
 If you want to run from source or for development:
