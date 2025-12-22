@@ -6,6 +6,10 @@ A powerful and customizable MIDI music visualizer that turns your music into art
 
 This project is a macOS version based on [Aclameta/MidiArt-Pro](https://github.com/Aclameta/MidiArt-Pro).
 
+**Original Author:**
+- GitHub: [@Aclameta](https://github.com/Aclameta)
+- Bilibili: [Aclameta](https://space.bilibili.com/109275196)
+
 [中文](README.md)
 
 ## Requirements

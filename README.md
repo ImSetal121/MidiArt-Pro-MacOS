@@ -6,6 +6,10 @@
 
 本项目基于 [Aclameta/MidiArt-Pro](https://github.com/Aclameta/MidiArt-Pro) 的 macOS 版本。
 
+**原作者：**
+- GitHub: [@Aclameta](https://github.com/Aclameta)
+- B站: [Aclameta](https://space.bilibili.com/109275196)
+
 [English](README_EN.md)
 
 ## 系统要求
