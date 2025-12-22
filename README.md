@@ -81,16 +81,12 @@ chmod +x build_macos_debug.sh
 ```
 
 **重要提示：**
-- 调试版本必须使用终端命令打开才能看到控制台输出：
-  ```bash
-  open "dist/MidiArt Pro.app"
-  ```
-  或者直接运行可执行文件：
+- 调试版本必须直接运行可执行文件才能看到控制台输出：
   ```bash
   "dist/MidiArt Pro.app/Contents/MacOS/MidiArt Pro"
   ```
-- 如果通过 Finder 双击打开，控制台窗口不会显示
-- 错误日志也会保存到 `~/MidiArt_Pro_error.log`
+- 如果通过 Finder 双击打开或使用 `open` 命令，控制台窗口不会显示
+- 错误日志会保存到 `~/MidiArt_Pro_error.log` 和 `~/MidiArt_Pro_debug.log`
 - 首次运行可能需要右键点击并选择"打开"（因为未签名）
 
 ## 依赖

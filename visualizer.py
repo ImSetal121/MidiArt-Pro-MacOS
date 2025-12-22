@@ -13,6 +13,19 @@ from tkinter import filedialog
 import pygame
 import librosa
 
+# --- 调试工具函数 ---
+def debug_print(message, level="INFO"):
+    """输出调试信息到控制台和日志文件"""
+    try:
+        log_msg = f"[{level}] {time.strftime('%Y-%m-%d %H:%M:%S')} - {message}"
+        print(log_msg)
+        # 同时写入日志文件
+        log_path = os.path.join(os.path.expanduser("~"), "MidiArt_Pro_debug.log")
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(log_msg + "\n")
+    except:
+        pass  # 如果日志写入失败，不影响程序运行
+
 # --- 默认参数定义 ---
 DEFAULT_WIDTH, DEFAULT_HEIGHT = 1920, 1080; DEFAULT_BPM, DEFAULT_MEASURES = None, 2
 DEFAULT_VIBRATION_MAX_INTENSITY = 4.0; DEFAULT_VIBRATION_ATTACK = 0.02; DEFAULT_VIBRATION_DECAY = 0.2
@@ -188,6 +201,37 @@ class App(ctk.CTk):
         self.moviepy_temp_dir = tempfile.gettempdir()
         # 设置环境变量，让 MoviePy 使用指定的临时目录
         os.environ['MOVIEPY_TEMP_DIR'] = self.moviepy_temp_dir
+        
+        # 检查 ffmpeg 可用性
+        try:
+            import imageio_ffmpeg
+            ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+            debug_print(f"FFmpeg 路径: {ffmpeg_exe}")
+            if not os.path.exists(ffmpeg_exe):
+                debug_print(f"警告: FFmpeg 可执行文件不存在: {ffmpeg_exe}", "WARNING")
+            else:
+                debug_print(f"FFmpeg 可执行文件存在，大小: {os.path.getsize(ffmpeg_exe)} 字节")
+        except Exception as e:
+            debug_print(f"无法获取 FFmpeg 路径: {e}", "ERROR")
+        
+        # 检查临时目录
+        debug_print(f"MoviePy 临时目录: {self.moviepy_temp_dir}")
+        if not os.path.exists(self.moviepy_temp_dir):
+            debug_print(f"警告: 临时目录不存在，尝试创建: {self.moviepy_temp_dir}", "WARNING")
+            try:
+                os.makedirs(self.moviepy_temp_dir, exist_ok=True)
+            except Exception as e:
+                debug_print(f"无法创建临时目录: {e}", "ERROR")
+        else:
+            # 检查临时目录是否可写
+            try:
+                test_file = os.path.join(self.moviepy_temp_dir, ".midiart_test")
+                with open(test_file, "w") as f:
+                    f.write("test")
+                os.remove(test_file)
+                debug_print(f"临时目录可写: {self.moviepy_temp_dir}")
+            except Exception as e:
+                debug_print(f"临时目录不可写: {e}", "ERROR")
         
         # pygame 初始化延迟到需要时进行，避免在主线程初始化导致 GIL 问题
         
@@ -401,6 +445,11 @@ class App(ctk.CTk):
     
     def render_backend(self):
         try:
+            debug_print("=" * 50)
+            debug_print("开始渲染流程")
+            debug_print(f"MIDI 文件: {self.midi_path}")
+            debug_print(f"音频文件: {self.audio_path}")
+            debug_print(f"输出目录: {self.output_dir}")
             color_mode_en = "Notes as White" if self.color_mode_var.get() in [LANGUAGES[lang]["notes_white"] for lang in LANGUAGES] else "Notes as Black"
             params = {
                 'width': int(self.width_entry.get() or DEFAULT_WIDTH), 'height': int(self.height_entry.get() or DEFAULT_HEIGHT),
@@ -421,8 +470,12 @@ class App(ctk.CTk):
             }
             
             self.update_progress(0, self.texts["status_parsing_midi"])
+            debug_print(f"解析 MIDI 文件: {self.midi_path}")
             notes, default_bpm, time_sig, song_duration = parse_midi(self.midi_path)
-            if not notes: raise Exception(self.texts["error_midi_parse_failed"])
+            if not notes: 
+                debug_print("错误: MIDI 解析失败或无音符", "ERROR")
+                raise Exception(self.texts["error_midi_parse_failed"])
+            debug_print(f"MIDI 解析成功: {len(notes)} 个音符, BPM: {default_bpm}, 时长: {song_duration:.2f} 秒")
             # 确保 time_sig 是元组格式
             if not isinstance(time_sig, tuple) or len(time_sig) < 2:
                 time_sig = (4, 4)  # 默认 4/4 拍
@@ -578,12 +631,20 @@ class App(ctk.CTk):
                 frame = pygame.surfarray.array3d(screen); frame = frame.transpose([1, 0, 2]); frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR); video_writer.write(frame)
             
             video_writer.release(); pygame.quit()
+            debug_print(f"无声视频渲染完成: {silent_output_path}")
             self.update_progress(1, self.texts["status_merging_audio"])
             # 使用绝对路径读取临时视频文件
             silent_output_path = os.path.join(self.output_dir, "silent_output.mp4")
+            debug_print(f"检查临时视频文件: {silent_output_path}")
             if not os.path.exists(silent_output_path):
+                debug_print(f"错误: 临时视频文件不存在: {silent_output_path}", "ERROR")
                 raise FileNotFoundError(f"临时视频文件未找到: {silent_output_path}")
-            video_clip = VideoFileClip(silent_output_path); audio_clip = AudioFileClip(self.audio_path)
+            debug_print(f"临时视频文件存在，大小: {os.path.getsize(silent_output_path)} 字节")
+            debug_print(f"加载视频和音频文件")
+            video_clip = VideoFileClip(silent_output_path)
+            debug_print(f"视频文件加载成功，时长: {video_clip.duration:.2f} 秒")
+            audio_clip = AudioFileClip(self.audio_path)
+            debug_print(f"音频文件加载成功，时长: {audio_clip.duration:.2f} 秒")
             # 新版本 moviepy 使用 subclipped 而不是 subclip，使用 with_audio 而不是 set_audio
             max_duration = min(video_clip.duration, audio_clip.duration)
             try:
@@ -614,8 +675,20 @@ class App(ctk.CTk):
             temp_output = os.path.join(temp_dir, f"midiart_temp_{temp_basename}.mp4")
             temp_audio = os.path.join(temp_dir, f"midiart_temp_{temp_basename}_audio.m4a")
             
+            debug_print(f"准备写入视频文件")
+            debug_print(f"  输出路径: {output_path}")
+            debug_print(f"  临时视频: {temp_output}")
+            debug_print(f"  临时音频: {temp_audio}")
+            debug_print(f"  视频时长: {final_clip.duration:.2f} 秒")
+            debug_print(f"  音频时长: {final_audio.duration:.2f} 秒")
+            
+            # 确保临时目录存在
+            os.makedirs(os.path.dirname(temp_output), exist_ok=True)
+            os.makedirs(os.path.dirname(temp_audio), exist_ok=True)
+            
             try:
                 # 先写入到临时目录，明确指定临时音频文件位置
+                debug_print(f"开始写入临时视频文件: {temp_output}")
                 final_clip.write_videofile(
                     temp_output, 
                     codec='libx264', 
@@ -623,24 +696,36 @@ class App(ctk.CTk):
                     logger=None,
                     temp_audiofile=temp_audio
                 )
+                debug_print(f"临时视频文件写入成功: {temp_output}")
                 # 写入成功后移动到最终位置
                 if os.path.exists(temp_output):
+                    debug_print(f"临时文件存在，大小: {os.path.getsize(temp_output)} 字节")
                     if os.path.exists(output_path):
+                        debug_print(f"删除已存在的输出文件: {output_path}")
                         os.remove(output_path)
                     # 使用 shutil.move 确保跨文件系统也能工作
+                    debug_print(f"移动临时文件到最终位置: {output_path}")
                     shutil.move(temp_output, output_path)
                     output_path = output_path  # 更新为最终路径
+                    debug_print(f"文件移动成功")
+                else:
+                    debug_print(f"错误: 临时文件不存在: {temp_output}", "ERROR")
             except Exception as write_error:
+                debug_print(f"写入临时文件失败: {write_error}", "ERROR")
+                import traceback
+                debug_print(f"错误详情:\n{traceback.format_exc()}", "ERROR")
                 # 如果临时目录写入失败，尝试直接写入最终位置
                 # 清理临时文件
                 for temp_file in [temp_output, temp_audio]:
                     if os.path.exists(temp_file):
                         try:
                             os.remove(temp_file)
-                        except:
-                            pass
+                            debug_print(f"清理临时文件: {temp_file}")
+                        except Exception as e:
+                            debug_print(f"无法删除临时文件 {temp_file}: {e}", "WARNING")
                 # 直接写入最终文件，使用临时音频文件
                 try:
+                    debug_print(f"尝试直接写入最终位置: {output_path}")
                     final_clip.write_videofile(
                         output_path, 
                         codec='libx264', 
@@ -648,9 +733,17 @@ class App(ctk.CTk):
                         logger=None,
                         temp_audiofile=temp_audio
                     )
-                except:
+                    debug_print(f"直接写入成功: {output_path}")
+                except Exception as e2:
+                    debug_print(f"使用 temp_audiofile 写入失败: {e2}", "WARNING")
+                    debug_print(f"尝试不使用 temp_audiofile 参数")
                     # 如果指定 temp_audiofile 失败，尝试不指定
-                    final_clip.write_videofile(output_path, codec='libx264', audio_codec='aac', logger=None)
+                    try:
+                        final_clip.write_videofile(output_path, codec='libx264', audio_codec='aac', logger=None)
+                        debug_print(f"不使用 temp_audiofile 写入成功: {output_path}")
+                    except Exception as e3:
+                        debug_print(f"所有写入方式都失败: {e3}", "ERROR")
+                        raise
             
             # 清理临时音频文件
             if os.path.exists(temp_audio):
@@ -660,8 +753,14 @@ class App(ctk.CTk):
                     pass
             
             self.update_progress(1, self.texts["status_genesis_complete"].format(filename=output_path))
+            debug_print(f"渲染完成: {output_path}")
         except Exception as e:
-            self.update_progress(0, self.texts["error_generic"].format(error=e)); import traceback; traceback.print_exc()
+            import traceback
+            error_trace = traceback.format_exc()
+            debug_print(f"渲染过程发生错误: {e}", "ERROR")
+            debug_print(f"错误堆栈:\n{error_trace}", "ERROR")
+            self.update_progress(0, self.texts["error_generic"].format(error=e))
+            traceback.print_exc()
         finally:
             self.render_button.configure(state="normal");
             # 清理临时文件（使用绝对路径）

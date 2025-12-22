@@ -81,16 +81,12 @@ chmod +x build_macos_debug.sh
 ```
 
 **Important Notes:**
-- The debug build **must** be opened using terminal command to see console output:
-  ```bash
-  open "dist/MidiArt Pro.app"
-  ```
-  Or run the executable directly:
+- The debug build **must** be run directly as an executable to see console output:
   ```bash
   "dist/MidiArt Pro.app/Contents/MacOS/MidiArt Pro"
   ```
-- If opened via Finder (double-click), the console window will not be displayed
-- Error logs are also saved to `~/MidiArt_Pro_error.log`
+- If opened via Finder (double-click) or using the `open` command, the console window will not be displayed
+- Error logs are saved to `~/MidiArt_Pro_error.log` and `~/MidiArt_Pro_debug.log`
 - First run may require right-clicking and selecting "Open" (due to unsigned app)
 
 ## Dependencies
