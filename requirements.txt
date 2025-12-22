@@ -1,0 +1,8 @@
+mido
+opencv-python
+moviepy
+customtkinter
+pygame
+librosa
+numpy
+

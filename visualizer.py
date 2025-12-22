@@ -2,7 +2,12 @@
 
 import mido, time, sys, math, random, cv2, os, json, threading, collections
 import numpy as np
-from moviepy.editor import VideoFileClip, AudioFileClip
+# 在导入 pygame 之前设置环境变量，避免在后台线程初始化显示模块导致崩溃
+os.environ['SDL_VIDEODRIVER'] = 'dummy'
+try:
+    from moviepy.editor import VideoFileClip, AudioFileClip
+except ImportError:
+    from moviepy import VideoFileClip, AudioFileClip
 import customtkinter as ctk
 from tkinter import filedialog
 import pygame
@@ -17,7 +22,20 @@ DEFAULT_NOTE_HEIGHT = 3.0; DEFAULT_VERTICAL_COMPRESSION = 0.9
 DEFAULT_SS_DOWNSAMPLE = 4; DEFAULT_SS_GAIN = 1.2
 # 【新增功能】为新功能添加默认值
 DEFAULT_DYNAMIC_RANGE_MODE = True 
-PRESETS_DIR = "presets"
+# 在打包后的应用中，presets 目录在资源路径中
+def get_presets_dir():
+    try:
+        # 尝试使用 PyInstaller 的资源路径
+        if hasattr(sys, '_MEIPASS'):
+            base_path = sys._MEIPASS
+            presets_path = os.path.join(base_path, "presets")
+            if os.path.exists(presets_path):
+                return presets_path
+    except:
+        pass
+    # 回退到当前目录
+    return "presets"
+PRESETS_DIR = get_presets_dir()
 GOLDEN_RATIO = 1.61803398875
 
 # --- 颜文字库 ---
@@ -28,7 +46,7 @@ LANGUAGES = {
     "zh": {
         "window_title": "MidiArt Pro", "main_title": "MidiArt Pro", "subtitle": "by Aclameta & Your AI Partner", 
         "preset_library": "预设库:", "load_preset": "加载预设...", "save_button": "保存", "console_title": "控制台", 
-        "select_midi_button": "选择 MIDI", "select_audio_button": "选择音频", "not_selected": "未选择", 
+        "select_midi_button": "选择 MIDI", "select_audio_button": "选择音频", "select_output_dir_button": "选择输出目录", "output_dir_label": "输出目录:", "not_selected": "未选择", 
         "color_theme_label": "颜色主题:", "notes_black": "音符为黑色", "notes_white": "音符为白色", 
         "resolution_label": "分辨率:", "width_placeholder": "W: {width}", "height_placeholder": "H: {height}", 
         "playback_settings_label": "播放设置:", "bpm_placeholder": "BPM (MIDI默认)", "measures_placeholder": "每页小节数 (默认: {measures})", 
@@ -52,7 +70,7 @@ LANGUAGES = {
     "en": {
         "window_title": "MidiArt Pro", "main_title": "MidiArt Pro", "subtitle": "by Aclameta & Your AI Partner", 
         "preset_library": "Preset Library:", "load_preset": "Load Preset...", "save_button": "Save", "console_title": "Control Panel", 
-        "select_midi_button": "Select MIDI", "select_audio_button": "Select Audio", "not_selected": "Not selected", 
+        "select_midi_button": "Select MIDI", "select_audio_button": "Select Audio", "select_output_dir_button": "Select Output Directory", "output_dir_label": "Output Directory:", "not_selected": "Not selected", 
         "color_theme_label": "Color Theme:", "notes_black": "Notes as Black", "notes_white": "Notes as White", 
         "resolution_label": "Resolution:", "width_placeholder": "W: {width}", "height_placeholder": "H: {height}", 
         "playback_settings_label": "Playback:", "bpm_placeholder": "BPM (MIDI Default)", "measures_placeholder": "Measures/Page (Default: {measures})", 
@@ -76,7 +94,7 @@ LANGUAGES = {
     "ja": {
         "window_title": "MidiArt Pro", "main_title": "MidiArt Pro", "subtitle": "by Aclameta & Your AI Partner", 
         "preset_library": "プリセット:", "load_preset": "プリセットを読込...", "save_button": "保存", "console_title": "コントロールパネル", 
-        "select_midi_button": "MIDIを選択", "select_audio_button": "オーディオを選択", "not_selected": "未選択", 
+        "select_midi_button": "MIDIを選択", "select_audio_button": "オーディオを選択", "select_output_dir_button": "出力ディレクトリを選択", "output_dir_label": "出力ディレクトリ:", "not_selected": "未選択", 
         "color_theme_label": "カラーテーマ:", "notes_black": "ノートは黒", "notes_white": "ノートは白", 
         "resolution_label": "解像度:", "width_placeholder": "幅: {width}", "height_placeholder": "高さ: {height}", 
         "playback_settings_label": "再生設定:", "bpm_placeholder": "BPM (MIDIデフォルト)", "measures_placeholder": "ページ毎の小節数 (規定値: {measures})", 
@@ -100,7 +118,7 @@ LANGUAGES = {
     "zh_tw": {
         "window_title": "MidiArt Pro", "main_title": "MidiArt Pro", "subtitle": "by Aclameta & Your AI Partner", 
         "preset_library": "預設集:", "load_preset": "載入預設...", "save_button": "儲存", "console_title": "控制台", 
-        "select_midi_button": "選取 MIDI", "select_audio_button": "選取音訊", "not_selected": "尚未選取", 
+        "select_midi_button": "選取 MIDI", "select_audio_button": "選取音訊", "select_output_dir_button": "選取輸出目錄", "output_dir_label": "輸出目錄:", "not_selected": "尚未選取", 
         "color_theme_label": "顏色主題:", "notes_black": "音符為黑色", "notes_white": "音符為白色", 
         "resolution_label": "解析度:", "width_placeholder": "寬: {width}", "height_placeholder": "高: {height}", 
         "playback_settings_label": "播放設定:", "bpm_placeholder": "BPM (MIDI預設)", "measures_placeholder": "每頁小節數 (預設: {measures})", 
@@ -128,6 +146,24 @@ def resource_path(relative_path):
     except Exception: base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
+def sanitize_filename(filename):
+    """清理文件名，移除或替换不安全的字符"""
+    import re
+    # 移除或替换不安全的字符：&, *, ?, |, <, >, :, ", /, \, 空格, 以及控制字符
+    # 将所有不安全的字符替换为下划线
+    filename = re.sub(r'[<>:"/\\|?*&\s\x00-\x1f]', '_', filename)
+    # 移除连续的下划线
+    filename = re.sub(r'_+', '_', filename)
+    # 移除开头和结尾的下划线
+    filename = filename.strip('_')
+    # 确保文件名不为空
+    if not filename:
+        filename = "output"
+    # 限制文件名长度（避免路径过长）
+    if len(filename) > 200:
+        filename = filename[:200]
+    return filename
+
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -135,6 +171,25 @@ class App(ctk.CTk):
         self.title(self.texts["window_title"]); self.geometry("600x850")
         ctk.set_appearance_mode("Light"); ctk.set_default_color_theme("blue")
         self.midi_path, self.audio_path = "", ""; self.grid_columnconfigure(0, weight=1);
+        
+        # 设置默认输出目录：使用用户的视频目录（~/Movies）
+        default_output_dir = os.path.join(os.path.expanduser("~"), "Movies")
+        # 如果视频目录不存在，创建它
+        if not os.path.exists(default_output_dir):
+            try:
+                os.makedirs(default_output_dir, exist_ok=True)
+            except:
+                # 如果创建失败，使用用户主目录
+                default_output_dir = os.path.expanduser("~")
+        self.output_dir = default_output_dir
+        
+        # 设置 MoviePy 临时目录，确保临时文件在可访问的位置
+        import tempfile
+        self.moviepy_temp_dir = tempfile.gettempdir()
+        # 设置环境变量，让 MoviePy 使用指定的临时目录
+        os.environ['MOVIEPY_TEMP_DIR'] = self.moviepy_temp_dir
+        
+        # pygame 初始化延迟到需要时进行，避免在主线程初始化导致 GIL 问题
         
         try:
             self.font_path_regular = resource_path("SourceHanSansSC-Regular.otf")
@@ -170,6 +225,8 @@ class App(ctk.CTk):
         self.midi_label = ctk.CTkLabel(file_frame, text=self.texts["not_selected"], anchor="w", font=self.ui_label_font); self.midi_label.grid(row=0, column=1, padx=10, pady=10, sticky="ew")
         self.select_audio_button = ctk.CTkButton(file_frame, text=self.texts["select_audio_button"], command=self.select_audio, font=self.ui_button_font); self.select_audio_button.grid(row=1, column=0, padx=10, pady=10, sticky="w")
         self.audio_label = ctk.CTkLabel(file_frame, text=self.texts["not_selected"], anchor="w", font=self.ui_label_font); self.audio_label.grid(row=1, column=1, padx=10, pady=10, sticky="ew")
+        self.select_output_dir_button = ctk.CTkButton(file_frame, text=self.texts["select_output_dir_button"], command=self.select_output_dir, font=self.ui_button_font); self.select_output_dir_button.grid(row=2, column=0, padx=10, pady=10, sticky="w")
+        self.output_dir_label = ctk.CTkLabel(file_frame, text=self.output_dir, anchor="w", font=self.ui_label_font); self.output_dir_label.grid(row=2, column=1, padx=10, pady=10, sticky="ew")
         settings_frame = ctk.CTkFrame(self.scrollable_frame); settings_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=10); settings_frame.grid_columnconfigure(1, weight=1)
         color_theme_frame = ctk.CTkFrame(settings_frame, fg_color=("gray90", "gray19")); color_theme_frame.grid(row=0, column=0, columnspan=2, padx=5, pady=5, sticky="ew"); color_theme_frame.grid_columnconfigure(1, weight=1)
         self.color_theme_label = ctk.CTkLabel(color_theme_frame, text=self.texts["color_theme_label"], font=self.ui_label_font); self.color_theme_label.grid(row=0, column=0, padx=(10,5), pady=5)
@@ -272,7 +329,8 @@ class App(ctk.CTk):
         if any(self.midi_label.cget("text") == LANGUAGES[lang]["not_selected"] for lang in LANGUAGES): self.midi_label.configure(text=self.texts["not_selected"])
         self.midi_label.configure(font=self.ui_label_font); self.select_audio_button.configure(text=self.texts["select_audio_button"], font=self.ui_button_font)
         if any(self.audio_label.cget("text") == LANGUAGES[lang]["not_selected"] for lang in LANGUAGES): self.audio_label.configure(text=self.texts["not_selected"])
-        self.audio_label.configure(font=self.ui_label_font); self.color_theme_label.configure(text=self.texts["color_theme_label"], font=self.ui_label_font); self.color_mode_switch.configure(values=[self.texts["notes_black"], self.texts["notes_white"]], font=self.ui_label_font); self.resolution_label.configure(text=self.texts["resolution_label"], font=self.ui_label_font)
+        self.audio_label.configure(font=self.ui_label_font); self.select_output_dir_button.configure(text=self.texts["select_output_dir_button"], font=self.ui_button_font)
+        self.output_dir_label.configure(text=self.output_dir, font=self.ui_label_font); self.color_theme_label.configure(text=self.texts["color_theme_label"], font=self.ui_label_font); self.color_mode_switch.configure(values=[self.texts["notes_black"], self.texts["notes_white"]], font=self.ui_label_font); self.resolution_label.configure(text=self.texts["resolution_label"], font=self.ui_label_font)
         self.width_entry.configure(placeholder_text=self.texts["width_placeholder"].format(width=DEFAULT_WIDTH), font=self.ui_label_font); self.height_entry.configure(placeholder_text=self.texts["height_placeholder"].format(height=DEFAULT_HEIGHT), font=self.ui_label_font); self.playback_settings_label.configure(text=self.texts["playback_settings_label"], font=self.ui_label_font)
         self.bpm_entry.configure(placeholder_text=self.texts["bpm_placeholder"], font=self.ui_label_font); self.measures_entry.configure(placeholder_text=self.texts["measures_placeholder"].format(measures=DEFAULT_MEASURES), font=self.ui_label_font); self.note_appearance_title_label.configure(text=self.texts["note_appearance_title"], font=self.ui_header_font)
         self.note_thickness_label.configure(text=self.texts["note_thickness_label"], font=self.ui_label_font); self.note_height_label.configure(font=self.ui_label_font); self.vertical_compression_label.configure(text=self.texts["vertical_compression_label"], font=self.ui_label_font); self.v_compress_label.configure(font=self.ui_label_font); self.fade_in_time_label.configure(text=self.texts["fade_in_time_label"], font=self.ui_label_font); self.fade_in_label.configure(font=self.ui_label_font)
@@ -329,6 +387,11 @@ class App(ctk.CTk):
 
     def select_midi(self): self.midi_path = filedialog.askopenfilename(title="Select MIDI", filetypes=(("MIDI", "*.mid *.midi"),)); self.midi_label.configure(text=os.path.basename(self.midi_path) or self.texts["not_selected"])
     def select_audio(self): self.audio_path = filedialog.askopenfilename(title="Select Audio", filetypes=(("Audio", "*.mp3 *.wav"),)); self.audio_label.configure(text=os.path.basename(self.audio_path) or self.texts["not_selected"])
+    def select_output_dir(self): 
+        selected_dir = filedialog.askdirectory(title="Select Output Directory", initialdir=self.output_dir)
+        if selected_dir:
+            self.output_dir = selected_dir
+            self.output_dir_label.configure(text=self.output_dir)
     
     def start_render(self):
         if not self.midi_path or not self.audio_path: self.progress_label.configure(text=self.texts["error_file_not_selected"]); return
@@ -352,7 +415,7 @@ class App(ctk.CTk):
                 'vib_a': self.vib_a_slider.get(), 'vib_d': self.vib_d_slider.get(),
                 'vib_s': self.vib_s_slider.get(), 'vib_r': self.vib_r_slider.get(), 
                 'ss_downsample': int(self.ss_density_slider.get()), 'ss_gain': self.ss_gain_slider.get(),
-                'final_video_name': f"{os.path.splitext(os.path.basename(self.midi_path))[0]}_Visualized.mp4",
+                'final_video_name': os.path.join(self.output_dir, f"{sanitize_filename(os.path.splitext(os.path.basename(self.midi_path))[0])}_Visualized.mp4"),
                 # 【新增功能】将新开关的状态传递给后端
                 'dynamic_range_mode': self.dynamic_range_switch.get()
             }
@@ -360,6 +423,9 @@ class App(ctk.CTk):
             self.update_progress(0, self.texts["status_parsing_midi"])
             notes, default_bpm, time_sig, song_duration = parse_midi(self.midi_path)
             if not notes: raise Exception(self.texts["error_midi_parse_failed"])
+            # 确保 time_sig 是元组格式
+            if not isinstance(time_sig, tuple) or len(time_sig) < 2:
+                time_sig = (4, 4)  # 默认 4/4 拍
             params['time_sig_info'] = (time_sig, (60.0 / (params['user_bpm'] or default_bpm)) * time_sig[0])
             if params['user_bpm'] is None: params['user_bpm'] = default_bpm
             if params['user_bpm'] != default_bpm:
@@ -368,7 +434,17 @@ class App(ctk.CTk):
                 song_duration *= ratio
 
             total_frames = math.ceil(song_duration * 60)
-            pygame.init(); pygame.font.init()
+            # 在后台线程初始化 pygame（使用 dummy driver 避免显示问题）
+            # pygame.get_init() 在新版本中返回布尔值，不是元组
+            init_result = pygame.get_init()
+            if isinstance(init_result, tuple):
+                is_init = init_result[0]
+            else:
+                is_init = bool(init_result)
+            if not is_init:
+                pygame.init()
+            if not pygame.font.get_init():
+                pygame.font.init()
 
             y, sr = None, None
             if params['enable_soundscape'] and params['pianotiles_mode']:
@@ -379,7 +455,9 @@ class App(ctk.CTk):
             else: PRIMARY_COLOR, SECONDARY_COLOR = (0, 0, 0), (255, 255, 255)
             C_NOTE, C_MAIN_BG, C_PIANO_BLOCK_BG, C_TEXT = PRIMARY_COLOR, PRIMARY_COLOR, SECONDARY_COLOR, SECONDARY_COLOR
             C_INACTIVE_PAGE_NOTE, C_NON_PIANO_BG = (200,200,200), (230, 230, 230)
-            screen = pygame.Surface((params['width'], params['height'])); video_writer = cv2.VideoWriter("silent_output.mp4", cv2.VideoWriter_fourcc(*'mp4v'), 60, (params['width'], params['height']))
+            # 使用绝对路径保存临时视频文件
+            silent_output_path = os.path.join(self.output_dir, "silent_output.mp4")
+            screen = pygame.Surface((params['width'], params['height'])); video_writer = cv2.VideoWriter(silent_output_path, cv2.VideoWriter_fourcc(*'mp4v'), 60, (params['width'], params['height']))
             
             fade_surface = None
             if params['pianotiles_mode']:
@@ -418,7 +496,12 @@ class App(ctk.CTk):
                         if song_surf: song_rect = song_surf.get_rect(centerx=text_column_center_x); song_rect.top = piano_rect.top; screen.blit(song_surf, song_rect)
 
                     # --- 【核心修改】在这里实现动态音域逻辑 ---
-                    page_duration = params['time_sig_info'][1]
+                    if isinstance(params.get('time_sig_info'), tuple) and len(params['time_sig_info']) >= 2:
+                        page_duration = params['time_sig_info'][1]
+                    else:
+                        # 如果 time_sig_info 无效，使用默认值
+                        bpm = params.get('user_bpm', 120)
+                        page_duration = (60.0 / bpm) * 4  # 默认 4/4 拍
                     current_page_index = math.floor(current_song_time / page_duration)
                     page_start_time = current_page_index * page_duration
                     page_end_time = page_start_time + page_duration
@@ -469,7 +552,12 @@ class App(ctk.CTk):
                                 color, vib_intensity = get_note_attrs(current_song_time, note, params, C_NOTE, C_INACTIVE_PAGE_NOTE)
                                 if color: pygame.draw.rect(screen, color, (x, y_pos + random.uniform(-vib_intensity, vib_intensity), width, params['note_height']))
                     else:
-                        page_duration = params['time_sig_info'][1]
+                        if isinstance(params.get('time_sig_info'), tuple) and len(params['time_sig_info']) >= 2:
+                            page_duration = params['time_sig_info'][1]
+                        else:
+                            # 如果 time_sig_info 无效，使用默认值
+                            bpm = params.get('user_bpm', 120)
+                            page_duration = (60.0 / bpm) * 4  # 默认 4/4 拍
                         current_page = math.floor(current_song_time / page_duration)
                         time_on_page = current_song_time % page_duration
                         page_start_time = current_page * page_duration
@@ -491,22 +579,108 @@ class App(ctk.CTk):
             
             video_writer.release(); pygame.quit()
             self.update_progress(1, self.texts["status_merging_audio"])
-            video_clip = VideoFileClip("silent_output.mp4"); audio_clip = AudioFileClip(self.audio_path)
-            final_audio = audio_clip.subclip(0, min(video_clip.duration, audio_clip.duration)); final_clip = video_clip.set_audio(final_audio)
-            final_clip.write_videofile(params['final_video_name'], codec='libx264', audio_codec='aac', logger=None)
-            self.update_progress(1, self.texts["status_genesis_complete"].format(filename=params['final_video_name']))
+            # 使用绝对路径读取临时视频文件
+            silent_output_path = os.path.join(self.output_dir, "silent_output.mp4")
+            if not os.path.exists(silent_output_path):
+                raise FileNotFoundError(f"临时视频文件未找到: {silent_output_path}")
+            video_clip = VideoFileClip(silent_output_path); audio_clip = AudioFileClip(self.audio_path)
+            # 新版本 moviepy 使用 subclipped 而不是 subclip，使用 with_audio 而不是 set_audio
+            max_duration = min(video_clip.duration, audio_clip.duration)
+            try:
+                # 尝试使用新版本的 subclipped
+                final_audio = audio_clip.subclipped(0, max_duration)
+            except (AttributeError, TypeError):
+                # 如果 subclipped 不存在或参数不对，尝试使用切片语法
+                final_audio = audio_clip[:max_duration]
+            # 新版本 moviepy 使用 with_audio 而不是 set_audio
+            try:
+                final_clip = video_clip.with_audio(final_audio)
+            except AttributeError:
+                # 如果 with_audio 不存在，尝试使用旧版本的 set_audio
+                final_clip = video_clip.set_audio(final_audio)
+            # 确保输出文件名是安全的
+            output_path = params['final_video_name']
+            # 如果路径包含特殊字符，再次清理
+            output_dir = os.path.dirname(output_path)
+            output_filename = sanitize_filename(os.path.basename(output_path))
+            output_path = os.path.join(output_dir, output_filename)
+            
+            # 使用临时目录写入，避免 moviepy 的临时文件问题
+            import tempfile
+            import shutil
+            temp_dir = self.moviepy_temp_dir
+            # 生成安全的临时文件名
+            temp_basename = sanitize_filename(os.path.splitext(os.path.basename(output_path))[0])
+            temp_output = os.path.join(temp_dir, f"midiart_temp_{temp_basename}.mp4")
+            temp_audio = os.path.join(temp_dir, f"midiart_temp_{temp_basename}_audio.m4a")
+            
+            try:
+                # 先写入到临时目录，明确指定临时音频文件位置
+                final_clip.write_videofile(
+                    temp_output, 
+                    codec='libx264', 
+                    audio_codec='aac', 
+                    logger=None,
+                    temp_audiofile=temp_audio
+                )
+                # 写入成功后移动到最终位置
+                if os.path.exists(temp_output):
+                    if os.path.exists(output_path):
+                        os.remove(output_path)
+                    # 使用 shutil.move 确保跨文件系统也能工作
+                    shutil.move(temp_output, output_path)
+                    output_path = output_path  # 更新为最终路径
+            except Exception as write_error:
+                # 如果临时目录写入失败，尝试直接写入最终位置
+                # 清理临时文件
+                for temp_file in [temp_output, temp_audio]:
+                    if os.path.exists(temp_file):
+                        try:
+                            os.remove(temp_file)
+                        except:
+                            pass
+                # 直接写入最终文件，使用临时音频文件
+                try:
+                    final_clip.write_videofile(
+                        output_path, 
+                        codec='libx264', 
+                        audio_codec='aac', 
+                        logger=None,
+                        temp_audiofile=temp_audio
+                    )
+                except:
+                    # 如果指定 temp_audiofile 失败，尝试不指定
+                    final_clip.write_videofile(output_path, codec='libx264', audio_codec='aac', logger=None)
+            
+            # 清理临时音频文件
+            if os.path.exists(temp_audio):
+                try:
+                    os.remove(temp_audio)
+                except:
+                    pass
+            
+            self.update_progress(1, self.texts["status_genesis_complete"].format(filename=output_path))
         except Exception as e:
             self.update_progress(0, self.texts["error_generic"].format(error=e)); import traceback; traceback.print_exc()
         finally:
             self.render_button.configure(state="normal");
-            if os.path.exists("silent_output.mp4"): os.remove("silent_output.mp4")
+            # 清理临时文件（使用绝对路径）
+            silent_output_path = os.path.join(self.output_dir, "silent_output.mp4")
+            if os.path.exists(silent_output_path): os.remove(silent_output_path)
 
 def parse_midi(midi_file):
     mid = mido.MidiFile(midi_file); notes = []; ticks_per_beat = mid.ticks_per_beat or 480; tempo = 500000; time_signature = (4, 4)
     for msg in mid:
         if msg.type == 'set_tempo': tempo = msg.tempo; break
     for msg in mid:
-        if msg.type == 'time_signature': time_signature = (msg.numerator, msg.denominator); break
+        if msg.type == 'time_signature': 
+            # 确保 time_signature 是元组格式
+            if hasattr(msg, 'numerator') and hasattr(msg, 'denominator'):
+                time_signature = (msg.numerator, msg.denominator)
+            break
+    # 确保 time_signature 始终是元组
+    if not isinstance(time_signature, tuple) or len(time_signature) < 2:
+        time_signature = (4, 4)
     bpm = mido.tempo2bpm(tempo); seconds_per_tick = tempo / (1000000.0 * ticks_per_beat); has_notes = False
     for track in mid.tracks:
         current_ticks = 0; open_notes = {}
@@ -542,6 +716,29 @@ def get_note_attrs(current_time, note, params, active_color, inactive_color, is_
 def lerp_color(c1, c2, factor): return tuple(int(c1[i] + (c2[i] - c1[i]) * factor) for i in range(3))
 
 if __name__ == "__main__":
-    if sys.platform == "darwin": ctk.set_appearance_mode("System")
-    app = App()
-    app.mainloop()
+    try:
+        if sys.platform == "darwin": ctk.set_appearance_mode("System")
+        app = App()
+        app.mainloop()
+    except Exception as e:
+        # 在打包后的应用中，将错误写入日志文件
+        import traceback
+        error_msg = f"应用启动失败: {e}\n{traceback.format_exc()}"
+        print(error_msg)
+        # 尝试写入日志文件
+        try:
+            log_path = os.path.join(os.path.expanduser("~"), "MidiArt_Pro_error.log")
+            with open(log_path, "w", encoding="utf-8") as f:
+                f.write(error_msg)
+            print(f"错误日志已保存到: {log_path}")
+        except:
+            pass
+        # 如果是打包后的应用，显示错误对话框
+        try:
+            import tkinter.messagebox as msgbox
+            root = ctk.CTk()
+            root.withdraw()
+            msgbox.showerror("MidiArt Pro 错误", f"应用启动失败:\n{str(e)}\n\n详细信息请查看控制台或日志文件。")
+        except:
+            pass
+        raise
