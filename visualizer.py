@@ -180,6 +180,16 @@ def sanitize_filename(filename):
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
+        # 设置工作目录到用户主目录，避免双击打开时工作目录问题
+        # 这对于 moviepy 临时文件的路径很重要
+        try:
+            user_home = os.path.expanduser("~")
+            if os.path.exists(user_home):
+                os.chdir(user_home)
+                debug_print(f"工作目录已设置为: {os.getcwd()}")
+        except Exception as e:
+            debug_print(f"无法设置工作目录: {e}", "WARNING")
+        
         self.current_lang = "zh"; self.texts = LANGUAGES[self.current_lang]
         self.title(self.texts["window_title"]); self.geometry("600x850")
         ctk.set_appearance_mode("Light"); ctk.set_default_color_theme("blue")
@@ -444,6 +454,7 @@ class App(ctk.CTk):
     def update_progress(self, value, text): self.progress_bar.set(value); self.progress_label.configure(text=text)
     
     def render_backend(self):
+        temp_audio_converted = None  # 用于存储 WAV 转换后的临时文件路径
         try:
             debug_print("=" * 50)
             debug_print("开始渲染流程")
@@ -643,8 +654,66 @@ class App(ctk.CTk):
             debug_print(f"加载视频和音频文件")
             video_clip = VideoFileClip(silent_output_path)
             debug_print(f"视频文件加载成功，时长: {video_clip.duration:.2f} 秒")
-            audio_clip = AudioFileClip(self.audio_path)
-            debug_print(f"音频文件加载成功，时长: {audio_clip.duration:.2f} 秒")
+            
+            # 检查音频文件格式和路径
+            audio_ext = os.path.splitext(self.audio_path)[1].lower()
+            is_wav = audio_ext == '.wav'
+            debug_print(f"音频文件格式: {audio_ext}")
+            debug_print(f"音频文件路径: {self.audio_path}")
+            
+            # 确保音频文件路径是绝对路径
+            audio_path_abs = os.path.abspath(self.audio_path)
+            if audio_path_abs != self.audio_path:
+                debug_print(f"音频文件路径已转换为绝对路径: {audio_path_abs}")
+                self.audio_path = audio_path_abs
+            
+            # 检查路径中是否包含空格
+            if ' ' in self.audio_path:
+                debug_print(f"警告: 音频文件路径包含空格: {self.audio_path}", "WARNING")
+            
+            # 对于 WAV 文件，尝试加载，如果失败则先转换为临时格式
+            audio_clip = None
+            try:
+                audio_clip = AudioFileClip(self.audio_path)
+                debug_print(f"音频文件加载成功，时长: {audio_clip.duration:.2f} 秒")
+            except Exception as wav_error:
+                if is_wav:
+                    debug_print(f"WAV 文件直接加载失败（可能包含 Chapters 元数据）: {wav_error}", "WARNING")
+                    debug_print(f"尝试将 WAV 转换为临时格式...")
+                    # 使用 ffmpeg 将 WAV 转换为临时 M4A 文件（去除 chapters）
+                    try:
+                        import imageio_ffmpeg
+                        import subprocess
+                        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+                        # 转换为 MP3 格式（MP3 不支持 chapters，可以避免问题）
+                        temp_audio_converted = os.path.join(self.moviepy_temp_dir, f"midiart_audio_conv_{int(time.time())}.mp3")
+                        debug_print(f"转换 WAV 到临时文件: {temp_audio_converted}")
+                        # 使用 ffmpeg 转换，去除 chapters 元数据
+                        # 使用 MP3 格式，因为 MP3 不支持 chapters
+                        cmd = [
+                            ffmpeg_exe,
+                            '-i', self.audio_path,
+                            '-vn',  # 不包含视频
+                            '-acodec', 'libmp3lame',  # 使用 MP3 编码
+                            '-map_chapters', '-1',  # 明确去除 chapters
+                            '-y',  # 覆盖输出文件
+                            temp_audio_converted
+                        ]
+                        debug_print(f"执行转换命令: {' '.join(cmd)}")
+                        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                        if result.returncode == 0 and os.path.exists(temp_audio_converted):
+                            debug_print(f"WAV 转换成功，临时文件: {temp_audio_converted}")
+                            audio_clip = AudioFileClip(temp_audio_converted)
+                            debug_print(f"转换后的音频文件加载成功，时长: {audio_clip.duration:.2f} 秒")
+                        else:
+                            debug_print(f"WAV 转换失败: {result.stderr}", "ERROR")
+                            raise Exception(f"无法转换 WAV 文件: {result.stderr}")
+                    except Exception as conv_error:
+                        debug_print(f"WAV 转换过程出错: {conv_error}", "ERROR")
+                        raise Exception(f"无法处理 WAV 文件，请尝试转换为 MP3 格式: {conv_error}")
+                else:
+                    # 非 WAV 格式也失败，直接抛出错误
+                    raise
             # 新版本 moviepy 使用 subclipped 而不是 subclip，使用 with_audio 而不是 set_audio
             max_duration = min(video_clip.duration, audio_clip.duration)
             try:
@@ -686,16 +755,62 @@ class App(ctk.CTk):
             os.makedirs(os.path.dirname(temp_output), exist_ok=True)
             os.makedirs(os.path.dirname(temp_audio), exist_ok=True)
             
+            # 转换为绝对路径，避免路径问题
+            temp_output = os.path.abspath(temp_output)
+            temp_audio = os.path.abspath(temp_audio)
+            output_path = os.path.abspath(output_path)
+            
+            # 对于 WAV 格式，不指定 temp_audiofile，让 moviepy 自动处理
+            # 这样可以避免 WAV 转 AAC 时的路径问题
+            use_temp_audiofile = not is_wav
+            
+            debug_print(f"音频格式: {'WAV' if is_wav else '其他'}")
+            debug_print(f"使用 temp_audiofile: {use_temp_audiofile}")
+            
             try:
-                # 先写入到临时目录，明确指定临时音频文件位置
+                # 先写入到临时目录
                 debug_print(f"开始写入临时视频文件: {temp_output}")
-                final_clip.write_videofile(
-                    temp_output, 
-                    codec='libx264', 
-                    audio_codec='aac', 
-                    logger=None,
-                    temp_audiofile=temp_audio
-                )
+                if use_temp_audiofile:
+                    # 对于非 WAV 格式，可以指定 temp_audiofile
+                    # 设置 moviepy 的临时目录环境变量
+                    original_temp_dir = os.environ.get('MOVIEPY_TEMP_DIR', '')
+                    os.environ['MOVIEPY_TEMP_DIR'] = self.moviepy_temp_dir
+                    try:
+                        final_clip.write_videofile(
+                            temp_output, 
+                            codec='libx264', 
+                            audio_codec='aac', 
+                            logger=None,
+                            temp_audiofile=temp_audio,
+                            preset='medium'  # 使用预设，避免路径问题
+                        )
+                    finally:
+                        # 恢复原始临时目录设置
+                        if original_temp_dir:
+                            os.environ['MOVIEPY_TEMP_DIR'] = original_temp_dir
+                        elif 'MOVIEPY_TEMP_DIR' in os.environ:
+                            del os.environ['MOVIEPY_TEMP_DIR']
+                else:
+                    # 对于 WAV 格式，不指定 temp_audiofile，让 moviepy 自动处理
+                    # 但需要确保使用绝对路径和正确的临时目录
+                    debug_print(f"WAV 格式：不指定 temp_audiofile 参数")
+                    # 设置 moviepy 的临时目录环境变量
+                    original_temp_dir = os.environ.get('MOVIEPY_TEMP_DIR', '')
+                    os.environ['MOVIEPY_TEMP_DIR'] = self.moviepy_temp_dir
+                    try:
+                        final_clip.write_videofile(
+                            temp_output, 
+                            codec='libx264', 
+                            audio_codec='aac', 
+                            logger=None,
+                            preset='medium'  # 使用预设，避免路径问题
+                        )
+                    finally:
+                        # 恢复原始临时目录设置
+                        if original_temp_dir:
+                            os.environ['MOVIEPY_TEMP_DIR'] = original_temp_dir
+                        elif 'MOVIEPY_TEMP_DIR' in os.environ:
+                            del os.environ['MOVIEPY_TEMP_DIR']
                 debug_print(f"临时视频文件写入成功: {temp_output}")
                 # 写入成功后移动到最终位置
                 if os.path.exists(temp_output):
@@ -723,32 +838,76 @@ class App(ctk.CTk):
                             debug_print(f"清理临时文件: {temp_file}")
                         except Exception as e:
                             debug_print(f"无法删除临时文件 {temp_file}: {e}", "WARNING")
-                # 直接写入最终文件，使用临时音频文件
+                # 直接写入最终文件
                 try:
                     debug_print(f"尝试直接写入最终位置: {output_path}")
-                    final_clip.write_videofile(
-                        output_path, 
-                        codec='libx264', 
-                        audio_codec='aac', 
-                        logger=None,
-                        temp_audiofile=temp_audio
-                    )
-                    debug_print(f"直接写入成功: {output_path}")
-                except Exception as e2:
-                    debug_print(f"使用 temp_audiofile 写入失败: {e2}", "WARNING")
-                    debug_print(f"尝试不使用 temp_audiofile 参数")
-                    # 如果指定 temp_audiofile 失败，尝试不指定
+                    # 设置 moviepy 的临时目录环境变量
+                    original_temp_dir = os.environ.get('MOVIEPY_TEMP_DIR', '')
+                    os.environ['MOVIEPY_TEMP_DIR'] = self.moviepy_temp_dir
                     try:
-                        final_clip.write_videofile(output_path, codec='libx264', audio_codec='aac', logger=None)
+                        if use_temp_audiofile:
+                            # 对于非 WAV 格式，尝试使用 temp_audiofile
+                            final_clip.write_videofile(
+                                output_path, 
+                                codec='libx264', 
+                                audio_codec='aac', 
+                                logger=None,
+                                temp_audiofile=temp_audio,
+                                preset='medium'
+                            )
+                        else:
+                            # 对于 WAV 格式，不指定 temp_audiofile
+                            final_clip.write_videofile(
+                                output_path, 
+                                codec='libx264', 
+                                audio_codec='aac', 
+                                logger=None,
+                                preset='medium'
+                            )
+                        debug_print(f"直接写入成功: {output_path}")
+                    finally:
+                        # 恢复原始临时目录设置
+                        if original_temp_dir:
+                            os.environ['MOVIEPY_TEMP_DIR'] = original_temp_dir
+                        elif 'MOVIEPY_TEMP_DIR' in os.environ:
+                            del os.environ['MOVIEPY_TEMP_DIR']
+                except Exception as e2:
+                    debug_print(f"写入失败: {e2}", "WARNING")
+                    # 如果失败，尝试不指定 temp_audiofile（适用于所有格式）
+                    debug_print(f"尝试不使用 temp_audiofile 参数")
+                    original_temp_dir = os.environ.get('MOVIEPY_TEMP_DIR', '')
+                    os.environ['MOVIEPY_TEMP_DIR'] = self.moviepy_temp_dir
+                    try:
+                        final_clip.write_videofile(
+                            output_path, 
+                            codec='libx264', 
+                            audio_codec='aac', 
+                            logger=None,
+                            preset='medium'
+                        )
                         debug_print(f"不使用 temp_audiofile 写入成功: {output_path}")
                     except Exception as e3:
                         debug_print(f"所有写入方式都失败: {e3}", "ERROR")
                         raise
+                    finally:
+                        # 恢复原始临时目录设置
+                        if original_temp_dir:
+                            os.environ['MOVIEPY_TEMP_DIR'] = original_temp_dir
+                        elif 'MOVIEPY_TEMP_DIR' in os.environ:
+                            del os.environ['MOVIEPY_TEMP_DIR']
             
             # 清理临时音频文件
             if os.path.exists(temp_audio):
                 try:
                     os.remove(temp_audio)
+                except:
+                    pass
+            
+            # 清理转换后的临时音频文件（如果有）
+            if temp_audio_converted and os.path.exists(temp_audio_converted):
+                try:
+                    os.remove(temp_audio_converted)
+                    debug_print(f"清理临时转换文件: {temp_audio_converted}")
                 except:
                     pass
             
@@ -766,6 +925,19 @@ class App(ctk.CTk):
             # 清理临时文件（使用绝对路径）
             silent_output_path = os.path.join(self.output_dir, "silent_output.mp4")
             if os.path.exists(silent_output_path): os.remove(silent_output_path)
+            # 清理可能残留的临时音频转换文件
+            try:
+                import glob
+                # 清理 MP3 和 M4A 格式的临时文件
+                for pattern in ["midiart_audio_conv_*.mp3", "midiart_audio_conv_*.m4a"]:
+                    temp_audio_pattern = os.path.join(self.moviepy_temp_dir, pattern)
+                    for temp_file in glob.glob(temp_audio_pattern):
+                        try:
+                            os.remove(temp_file)
+                        except:
+                            pass
+            except:
+                pass
 
 def parse_midi(midi_file):
     mid = mido.MidiFile(midi_file); notes = []; ticks_per_beat = mid.ticks_per_beat or 480; tempo = 500000; time_signature = (4, 4)
