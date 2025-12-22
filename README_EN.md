@@ -16,9 +16,7 @@ This project is a macOS version based on [Aclameta/MidiArt-Pro](https://github.c
 
 ## Requirements
 
-- macOS
-- Python 3.9 or higher
-- Recommended: install Python via Homebrew
+- macOS 10.13 or later
 
 ## How to Run
 
@@ -31,12 +29,17 @@ This project is a macOS version based on [Aclameta/MidiArt-Pro](https://github.c
 
 **Important Notes:**
 - First run: If you see a security warning, right-click the app and select "Open", then click "Open" in the dialog
-- System Requirements: macOS 10.13 or later
 - The app is unsigned, so you may need to allow it in System Settings > Privacy & Security
 
 ### Run from Source
 
 If you want to run from source or for development:
+
+**Requirements:**
+- macOS 10.13 or later
+- Python 3.9 or higher (Recommended: install via Homebrew)
+
+**Steps:**
 
 1. Clone or download this project
 2. Navigate to the project directory in terminal
