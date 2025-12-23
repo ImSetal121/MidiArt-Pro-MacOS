@@ -77,6 +77,12 @@ if [ $? -eq 0 ]; then
     echo "提示:"
     echo "1. 首次运行可能需要右键点击并选择'打开'（因为未签名）"
     echo "2. 可以在系统设置中允许运行未签名的应用"
+    echo ""
+    echo "调试信息:"
+    echo "如果需要查看控制台输出和调试信息，请直接运行可执行文件："
+    echo "  \"dist/MidiArt Pro.app/Contents/MacOS/MidiArt Pro\""
+    echo "注意：如果通过 Finder 双击打开或使用 open 命令，控制台窗口不会显示"
+    echo "错误日志会保存到 ~/MidiArt_Pro_error.log 和 ~/MidiArt_Pro_debug.log"
 else
     echo ""
     echo "❌ 打包失败，请检查错误信息"

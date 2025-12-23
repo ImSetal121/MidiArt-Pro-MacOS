@@ -4,7 +4,7 @@
 
 ![MidiArt Pro 运行截图](images/run_in_macos.png)
 
-## 上游仓库
+## 原仓库
 
 本项目基于 [Aclameta/MidiArt-Pro](https://github.com/Aclameta/MidiArt-Pro) 的 macOS 版本。
 
@@ -34,7 +34,7 @@
 **音频格式支持：**
 - 支持 **MP3** 和 **WAV** 格式的音频文件
 - 推荐使用 **MP3 格式** 以获得更好的兼容性
-- 如果使用 WAV 格式遇到问题，请查看调试日志或使用调试版本
+- 如果使用 WAV 格式遇到问题，请查看调试日志
 
 ### 源码运行方式
 
@@ -43,6 +43,7 @@
 **系统要求：**
 - macOS 10.13 或更高版本
 - Python 3.9 或更高版本（推荐使用 Homebrew 安装）
+- Homebrew（用于安装 python-tk，脚本会自动处理）
 
 **运行步骤：**
 
@@ -56,9 +57,15 @@ chmod +x run.sh
 ```
 
 脚本会自动：
+- 检查并安装 python-tk（Tkinter 支持，如果缺失）
 - 检查并创建 Python 虚拟环境
 - 安装所需依赖
 - 启动应用
+
+**注意：**
+- 如果首次运行时检测到缺少 Tkinter 支持，脚本会自动通过 Homebrew 安装 `python-tk`
+- 安装完成后需要重新运行脚本
+- 如果遇到权限问题，请确保已安装 Homebrew
 
 **许可证提示：**
 - 本项目采用 [CC BY-NC-SA 4.0](LICENSE) 许可证
@@ -67,8 +74,6 @@ chmod +x run.sh
 
 ## 打包方法
 
-### 生产版本
-
 ```bash
 chmod +x build_macos.sh
 ./build_macos.sh
@@ -76,31 +81,28 @@ chmod +x build_macos.sh
 
 打包完成后，应用位于 `dist/MidiArt Pro.app`
 
-### 调试版本
-
-如果需要查看控制台输出以调试问题，可以使用调试版本：
-
-```bash
-chmod +x build_macos_debug.sh
-./build_macos_debug.sh
-```
-
 **重要提示：**
-- 调试版本必须直接运行可执行文件才能看到控制台输出：
-  ```bash
-  "dist/MidiArt Pro.app/Contents/MacOS/MidiArt Pro"
-  ```
-- 如果通过 Finder 双击打开或使用 `open` 命令，控制台窗口不会显示
-- 错误日志会保存到 `~/MidiArt_Pro_error.log` 和 `~/MidiArt_Pro_debug.log`
 - 首次运行可能需要右键点击并选择"打开"（因为未签名）
+- 可以在系统设置中允许运行未签名的应用
+
+**调试信息：**
+如果需要查看控制台输出和调试信息，请直接运行可执行文件：
+```bash
+"dist/MidiArt Pro.app/Contents/MacOS/MidiArt Pro"
+```
+注意：如果通过 Finder 双击打开或使用 `open` 命令，控制台窗口不会显示。错误日志会保存到 `~/MidiArt_Pro_error.log` 和 `~/MidiArt_Pro_debug.log`
 
 ## 依赖
 
+**系统依赖：**
+- python-tk（通过 Homebrew 安装，脚本会自动处理）
+
+**Python 依赖：**
 主要依赖包括：
 - mido
 - opencv-python
 - moviepy
-- customtkinter
+- customtkinter（需要 Tkinter 支持）
 - pygame
 - librosa
 - numpy

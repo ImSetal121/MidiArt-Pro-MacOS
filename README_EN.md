@@ -4,7 +4,7 @@ A powerful and customizable MIDI music visualizer that turns your music into art
 
 ![MidiArt Pro Running on macOS](images/run_in_macos.png)
 
-## Upstream Repository
+## Original Repository
 
 This project is a macOS version based on [Aclameta/MidiArt-Pro](https://github.com/Aclameta/MidiArt-Pro).
 
@@ -34,7 +34,7 @@ This project is a macOS version based on [Aclameta/MidiArt-Pro](https://github.c
 **Audio Format Support:**
 - Supports **MP3** and **WAV** format audio files
 - **MP3 format** is recommended for better compatibility
-- If you encounter issues with WAV format, please check debug logs or use the debug build
+- If you encounter issues with WAV format, please check debug logs
 
 ### Run from Source
 
@@ -43,6 +43,7 @@ If you want to run from source or for development:
 **Requirements:**
 - macOS 10.13 or later
 - Python 3.9 or higher (Recommended: install via Homebrew)
+- Homebrew (for installing python-tk, handled automatically by the script)
 
 **Steps:**
 
@@ -56,9 +57,15 @@ chmod +x run.sh
 ```
 
 The script will automatically:
+- Check and install python-tk (Tkinter support, if missing)
 - Check and create Python virtual environment
 - Install required dependencies
 - Launch the application
+
+**Note:**
+- If Tkinter support is missing on first run, the script will automatically install `python-tk` via Homebrew
+- After installation, you need to run the script again
+- If you encounter permission issues, make sure Homebrew is installed
 
 **License Notice:**
 - This project is licensed under [CC BY-NC-SA 4.0](LICENSE)
@@ -67,8 +74,6 @@ The script will automatically:
 
 ## How to Build
 
-### Production Build
-
 ```bash
 chmod +x build_macos.sh
 ./build_macos.sh
@@ -76,31 +81,28 @@ chmod +x build_macos.sh
 
 After building, the application will be located at `dist/MidiArt Pro.app`
 
-### Debug Build
-
-If you need to see console output for debugging, use the debug build:
-
-```bash
-chmod +x build_macos_debug.sh
-./build_macos_debug.sh
-```
-
 **Important Notes:**
-- The debug build **must** be run directly as an executable to see console output:
-  ```bash
-  "dist/MidiArt Pro.app/Contents/MacOS/MidiArt Pro"
-  ```
-- If opened via Finder (double-click) or using the `open` command, the console window will not be displayed
-- Error logs are saved to `~/MidiArt_Pro_error.log` and `~/MidiArt_Pro_debug.log`
 - First run may require right-clicking and selecting "Open" (due to unsigned app)
+- You may need to allow unsigned apps in System Settings
+
+**Debug Information:**
+If you need to see console output and debug information, run the executable directly:
+```bash
+"dist/MidiArt Pro.app/Contents/MacOS/MidiArt Pro"
+```
+Note: If opened via Finder (double-click) or using the `open` command, the console window will not be displayed. Error logs are saved to `~/MidiArt_Pro_error.log` and `~/MidiArt_Pro_debug.log`
 
 ## Dependencies
 
+**System Dependencies:**
+- python-tk (installed via Homebrew, handled automatically by the script)
+
+**Python Dependencies:**
 Main dependencies include:
 - mido
 - opencv-python
 - moviepy
-- customtkinter
+- customtkinter (requires Tkinter support)
 - pygame
 - librosa
 - numpy
